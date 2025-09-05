@@ -64,3 +64,171 @@
       </div>
       <div class="chip" id="updated">—</div>
     </header>
+
+    <section class="grid" id="fixtures"></section>
+    <div class="empty" id="empty" style="display:none;">No fixtures scheduled for today.</div>
+    <footer>Powered by FANZO • Auto-refreshes every 15 minutes</footer>
+  </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // ---------- CONFIG ----------
+  const FANZO_XML_URL = "https://www-service.fanzo.com/venues/124077/fixture/xml?newFields=1"; // your venue XML
+  const PROXY_BASE    = "https://fanzo.harry-brasher.workers.dev/?url=";                       // your CORS proxy
+  const SHOW_MODE     = "today";   // "today" | "range" | "all"
+  const RANGE_DAYS    = 7;         // when SHOW_MODE = "range"
+  const REFRESH_MS    = 15 * 60 * 1000; // 15 min
+  const TZ            = "Australia/Adelaide";
+
+  const { DateTime, Interval } = luxon;
+
+  function proxied(url) {
+    // cache-buster avoids signage caching
+    return PROXY_BASE + encodeURIComponent(url) + "&t=" + Date.now();
+  }
+
+  function getText(el, names) {
+    for (const n of names) {
+      const x = el.querySelector(n);
+      if (x && x.textContent) return x.textContent.trim();
+    }
+    return "";
+  }
+
+  function asISO(s) {
+    if (!s) return null;
+    try {
+      if (/\d{4}-\d{2}-\d{2}T/.test(s)) return DateTime.fromISO(s, { zone: 'utc' });
+      if (/^\d{10,13}$/.test(s)) {
+        const ms = s.length === 13 ? Number(s) : Number(s) * 1000;
+        return DateTime.fromMillis(ms, { zone: 'utc' });
+      }
+      return DateTime.fromJSDate(new Date(s));
+    } catch { return null; }
+  }
+
+  function isToday(dtLocal) {
+    const today = DateTime.now().setZone(TZ).startOf('day');
+    return dtLocal.hasSame(today, 'day');
+  }
+
+  function inNextDays(dtLocal, days) {
+    const start = DateTime.now().setZone(TZ).startOf('day');
+    const end   = start.plus({ days });
+    return Interval.fromDateTimes(start, end).contains(dtLocal);
+  }
+
+  async function fetchXML() {
+    const res = await fetch(proxied(FANZO_XML_URL), { cache: 'no-store' });
+    const txt = await res.text(); // capture body for better error messages
+    if (!res.ok) throw new Error(`Upstream ${res.status}: ${txt.slice(0,200)}`);
+    const parser = new DOMParser();
+    return parser.parseFromString(txt, "application/xml");
+  }
+
+  function mapFixtures(xml) {
+    // Flexible tag names to match FANZO/RSS shapes
+    const nodes = Array.from(xml.querySelectorAll('fixture, item, event, Fixture, Event'));
+    return nodes.map(node => {
+      const title       = getText(node, ['title','eventName','name']);
+      const sport       = getText(node, ['sport','sportName','Sport']);
+      const competition = getText(node, ['competition','competitionName','league','League']);
+      const desc        = getText(node, ['description','desc','summary']);
+      const ch          = getText(node, ['channel','broadcaster','tvChannel','tv']);
+      const image       = getText(node, ['image','imageUrl','logo','img']);
+
+      // Time candidates (add pubDate for RSS)
+      const tLocal = getText(node, ['startTimeLocal','localStart','startLocal']);
+      const tUTC   = getText(node, ['startTimeUtc','utcStart','startTime','StartUtc','pubDate']);
+      const start  = asISO(tLocal) || asISO(tUTC);
+      const startLocal = start ? start.setZone(TZ) : null;
+
+      return { title, sport, competition, desc, ch, image, startLocal };
+    })
+    .filter(x => x.title && x.startLocal)
+    .sort((a,b) => a.startLocal.toMillis() - b.startLocal.toMillis()); // <-- fixed sort
+  }
+
+  function filterFixtures(arr) {
+    if (SHOW_MODE === 'all') return arr;
+    if (SHOW_MODE === 'range') return arr.filter(x => inNextDays(x.startLocal, RANGE_DAYS));
+    return arr.filter(x => isToday(x.startLocal)); // default: today
+  }
+
+  function render(fixtures, statusText) {
+    const list     = document.getElementById('fixtures');
+    const empty    = document.getElementById('empty');
+    const subtitle = document.getElementById('subtitle');
+    const updated  = document.getElementById('updated');
+
+    list.innerHTML = "";
+    const now = DateTime.now().setZone(TZ);
+    subtitle.textContent = SHOW_MODE === 'today'
+      ? `Today • ${now.toFormat('ccc d LLL yyyy')}`
+      : (SHOW_MODE === 'range'
+          ? `Next ${RANGE_DAYS} days from ${now.toFormat('d LLL')}`
+          : `All upcoming fixtures`);
+    updated.textContent = statusText || `Updated ${now.toFormat('h:mma')}`;
+
+    if (!fixtures.length) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+
+    for (const f of fixtures) {
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      const time = document.createElement('div');
+      time.className = 'time';
+      time.textContent = f.startLocal ? f.startLocal.toFormat('h:mma') : '—';
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = f.title || 'Fixture';
+
+      const detail = document.createElement('div');
+      detail.className = 'detail';
+
+      const bits = [];
+      if (f.sport)       bits.push(`Sport: ${f.sport}`);
+      if (f.competition) bits.push(`Comp: ${f.competition}`);
+      if (f.ch)          bits.push(`Channel: ${f.ch}`);
+      if (f.desc)        bits.push(f.desc);
+
+      detail.textContent = bits.join(' • ');
+
+      meta.appendChild(title);
+      meta.appendChild(detail);
+
+      card.appendChild(time);
+      card.appendChild(meta);
+
+      list.appendChild(card);
+    }
+  }
+
+  async function runOnce() {
+    try {
+      const xml      = await fetchXML();
+      const mapped   = mapFixtures(xml);
+      const filtered = filterFixtures(mapped);
+      render(filtered); // success
+    } catch (err) {
+      // Surface the error visibly on the screen (useful on signage)
+      render([], `Error ${new Date().toLocaleTimeString()}`);
+      document.getElementById('fixtures').innerHTML =
+        `<div class="empty">Error loading fixtures:<br>${(err && err.message) ? err.message : err}</div>`;
+    }
+  }
+
+  runOnce();
+  setInterval(runOnce, REFRESH_MS);
+});
+</script>
+</body>
+</html>
