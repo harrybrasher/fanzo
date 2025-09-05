@@ -9,57 +9,59 @@
 <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
 <script defer src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
 <style>
-  :root {
-    --bg: #0b0d12; --card: #11141b; --text: #f2f4f8; --muted: #9aa4b2; --accent: #4cc3ff;
-  }
-  html,body { height:100%; margin:0; background:var(--bg); color:var(--text);
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif; }
-  .wrap { max-width:1080px; margin:0 auto; padding:24px; }
-  header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
-  h1 { font-size:44px; line-height:1.1; margin:0; letter-spacing:0.5px; }
-  .sub { color:var(--muted); font-size:16px; }
-  .grid { margin-top:18px; display:grid; grid-template-columns:1fr; gap:12px; }
-  .card { background:var(--card); border-radius:16px; padding:16px 18px; display:flex; gap:14px; align-items:center; min-height:84px; }
-  .time { min-width:120px; text-align:left; font-weight:700; font-size:28px; }
-  .meta { flex:1; }
-  .title { font-size:26px; font-weight:700; margin-bottom:4px; }
-  .detail { font-size:16px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
-  .chip { font-size:14px; padding:3px 8px; border-radius:999px; background:#1b2130; color:#b7c2cf; }
-  .empty { text-align:center; padding:80px 20px; color:var(--muted); font-size:20px; }
-  footer { margin-top:16px; color:var(--muted); font-size:14px; text-align:right; }
+  :root { --bg:#0b0d12; --card:#11141b; --text:#f2f4f8; --muted:#9aa4b2; --chip:#1b2130; }
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:24px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  h1{font-size:44px;line-height:1.1;margin:0;letter-spacing:.5px}
+  .sub{color:var(--muted);font-size:16px}
+  .grid{margin-top:18px;display:grid;grid-template-columns:1fr;gap:12px}
+  .card{background:var(--card);border-radius:16px;padding:16px 18px;display:flex;gap:14px;align-items:center;min-height:96px}
+  .time{min-width:130px;text-align:left;font-weight:800;font-size:28px}
+  .meta{flex:1;min-width:0}
+  .title{font-size:26px;font-weight:800;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .detail{font-size:16px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap}
+  .chip{font-size:14px;padding:4px 10px;border-radius:999px;background:var(--chip);color:#cdd6e3}
+  .logos{display:flex;gap:8px;align-items:center;margin-left:auto}
+  .logo{width:48px;height:48px;object-fit:contain;background:#0e121a;border-radius:8px}
+  .empty{text-align:center;padding:80px 20px;color:var(--muted);font-size:20px}
+  footer{margin-top:16px;color:var(--muted);font-size:14px;text-align:right}
+  a{color:#9fd1ff;text-decoration:none}
+  a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <div>
-        <h1>Live Sport Today</h1>
+        <h1>Live Sport</h1>
         <div class="sub" id="subtitle">Loading fixtures…</div>
       </div>
       <div class="chip" id="updated">—</div>
     </header>
 
     <section class="grid" id="fixtures"></section>
-    <div class="empty" id="empty" style="display:none;">No fixtures scheduled for today.</div>
+    <div class="empty" id="empty" style="display:none;">No fixtures in the selected window.</div>
     <footer>Powered by FANZO • Auto-refreshes every 15 minutes</footer>
   </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-  // ---------- CONFIG ----------
-  const FANZO_XML_URL = "https://www-service.fanzo.com/venues/124077/fixture/xml?newFields=1"; // your venue XML
-  const PROXY_BASE    = "https://fanzo.harry-brasher.workers.dev/";                            // <-- root of your proxy ONLY
-  const SHOW_MODE     = "today";   // "today" | "range" | "all"
-  const RANGE_DAYS    = 7;         // when SHOW_MODE = "range"
-  const REFRESH_MS    = 15 * 60 * 1000; // 15 min
+  // ── CONFIG ──────────────────────────────────────────────────────────────
+  const FANZO_XML_URL = "https://www-service.fanzo.com/venues/124077/fixture/xml?newFields=1";  // ← your FANZO XML
+  const PROXY_BASE    = "https://fanzo.harry-brasher.workers.dev/";                              // ← your proxy ROOT (no ?url=)
+  const SHOW_MODE     = "range";     // "today" | "range" | "all"  (start with "range" for testing)
+  const RANGE_DAYS    = 14;          // when SHOW_MODE = "range"
+  const REFRESH_MS    = 15 * 60 * 1000;
   const TZ            = "Australia/Adelaide";
+  const FEED_DATE_IS_LOCAL = true;   // FANZO "date" looks local; set true to parse as TZ
 
   const { DateTime, Interval } = luxon;
 
   function buildProxyUrl(targetUrl) {
     const u = new URL(PROXY_BASE);
     u.searchParams.set("url", targetUrl);
-    u.searchParams.set("t", Date.now()); // cache buster for signage players
+    u.searchParams.set("t", Date.now()); // cache buster
     return u.toString();
   }
 
@@ -71,23 +73,28 @@ document.addEventListener('DOMContentLoaded', () => {
     return "";
   }
 
-  function asISO(s) {
+  function parseFanzoDate(s) {
     if (!s) return null;
+    // FANZO example: "2019-03-08 19:45:00"
+    const fmt = "yyyy-LL-dd HH:mm:ss";
     try {
-      if (/\d{4}-\d{2}-\d{2}T/.test(s)) return DateTime.fromISO(s, { zone: 'utc' });
-      if (/^\d{10,13}$/.test(s)) {
-        const ms = s.length === 13 ? Number(s) : Number(s) * 1000;
-        return DateTime.fromMillis(ms, { zone: 'utc' });
+      if (FEED_DATE_IS_LOCAL) {
+        const dt = DateTime.fromFormat(s, fmt, { zone: TZ });
+        return dt.isValid ? dt : null;
+      } else {
+        // parse as UTC, then show in TZ
+        const dt = DateTime.fromFormat(s, fmt, { zone: "utc" });
+        return dt.isValid ? dt.setZone(TZ) : null;
       }
-      return DateTime.fromJSDate(new Date(s));
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   }
 
   function isToday(dtLocal) {
     const today = DateTime.now().setZone(TZ).startOf('day');
     return dtLocal.hasSame(today, 'day');
   }
-
   function inNextDays(dtLocal, days) {
     const start = DateTime.now().setZone(TZ).startOf('day');
     const end   = start.plus({ days });
@@ -96,95 +103,111 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function fetchXML() {
     const url = buildProxyUrl(FANZO_XML_URL);
-    const res = await fetch(url, { cache: 'no-store' });
-    const txt = await res.text(); // capture body for diagnostics
+    const res = await fetch(url, { cache: "no-store" });
+    const txt = await res.text(); // keep for diagnostics
     if (!res.ok) {
-      throw new Error(`Proxy HTTP ${res.status} from ${url}\n\n${txt.slice(0,300)}`);
+      throw new Error(`Proxy HTTP ${res.status}\n${url}\n\n${txt.slice(0,400)}`);
     }
     const parser = new DOMParser();
     return parser.parseFromString(txt, "application/xml");
   }
 
   function mapFixtures(xml) {
-    const nodes = Array.from(xml.querySelectorAll('fixture, item, event, Fixture, Event'));
+    // FANZO typically uses <fixture> … but also support <item>/<event> just in case
+    let nodes = Array.from(xml.querySelectorAll("fixture"));
+    if (!nodes.length) nodes = Array.from(xml.querySelectorAll("item,event,Fixture,Event"));
+
     return nodes.map(node => {
-      const title       = getText(node, ['title','eventName','name']);
-      const sport       = getText(node, ['sport','sportName','Sport']);
-      const competition = getText(node, ['competition','competitionName','league','League']);
-      const desc        = getText(node, ['description','desc','summary']);
-      const ch          = getText(node, ['channel','broadcaster','tvChannel','tv']);
-      const image       = getText(node, ['image','imageUrl','logo','img']);
+      const title       = getText(node, ["title"]);
+      const description = getText(node, ["description"]);
+      const sport       = getText(node, ["sport"]);
+      const team1Logo   = getText(node, ["team1"]);
+      const team2Logo   = getText(node, ["team2"]);
+      const link        = getText(node, ["link"]);
+      const dateStr     = getText(node, ["date"]);
+      const bigScreen   = getText(node, ["bigScreen"]).toLowerCase() === "true";
+      const sound       = getText(node, ["sound"]).toLowerCase() === "true";
 
-      // Include common RSS date field as fallback
-      const tLocal = getText(node, ['startTimeLocal','localStart','startLocal']);
-      const tUTC   = getText(node, ['startTimeUtc','utcStart','startTime','StartUtc','pubDate','date']);
-      const start  = asISO(tLocal) || asISO(tUTC);
-      const startLocal = start ? start.setZone(TZ) : null;
+      const startLocal  = parseFanzoDate(dateStr); // Luxon DateTime or null
 
-      return { title, sport, competition, desc, ch, image, startLocal };
+      return { title, description, sport, team1Logo, team2Logo, link, startLocal, bigScreen, sound };
     })
     .filter(x => x.title && x.startLocal)
     .sort((a,b) => a.startLocal.toMillis() - b.startLocal.toMillis());
   }
 
   function filterFixtures(arr) {
-    if (SHOW_MODE === 'all')  return arr;
-    if (SHOW_MODE === 'range') return arr.filter(x => inNextDays(x.startLocal, RANGE_DAYS));
-    return arr.filter(x => isToday(x.startLocal));
+    if (SHOW_MODE === "all")   return arr;
+    if (SHOW_MODE === "range") return arr.filter(x => inNextDays(x.startLocal, RANGE_DAYS));
+    return arr.filter(x => isToday(x.startLocal)); // "today"
   }
 
   function render(fixtures, statusText) {
-    const list     = document.getElementById('fixtures');
-    const empty    = document.getElementById('empty');
-    const subtitle = document.getElementById('subtitle');
-    const updated  = document.getElementById('updated');
+    const list     = document.getElementById("fixtures");
+    const empty    = document.getElementById("empty");
+    const subtitle = document.getElementById("subtitle");
+    const updated  = document.getElementById("updated");
 
     list.innerHTML = "";
     const now = DateTime.now().setZone(TZ);
-    subtitle.textContent = SHOW_MODE === 'today'
-      ? `Today • ${now.toFormat('ccc d LLL yyyy')}`
-      : (SHOW_MODE === 'range'
-          ? `Next ${RANGE_DAYS} days from ${now.toFormat('d LLL')}`
-          : `All upcoming fixtures`);
-    updated.textContent = statusText || `Updated ${now.toFormat('h:mma')}`;
+    subtitle.textContent =
+      SHOW_MODE === "today" ? `Today • ${now.toFormat("ccc d LLL yyyy")}` :
+      SHOW_MODE === "range" ? `Next ${RANGE_DAYS} days from ${now.toFormat("d LLL")}` :
+      `All upcoming fixtures`;
+    updated.textContent = statusText || `Updated ${now.toFormat("h:mma")}`;
 
     if (!fixtures.length) {
-      empty.style.display = 'block';
+      empty.style.display = "block";
       return;
     }
-    empty.style.display = 'none';
+    empty.style.display = "none";
 
     for (const f of fixtures) {
-      const card = document.createElement('div');
-      card.className = 'card';
+      const card = document.createElement("div");
+      card.className = "card";
 
-      const time = document.createElement('div');
-      time.className = 'time';
-      time.textContent = f.startLocal ? f.startLocal.toFormat('h:mma') : '—';
+      const time = document.createElement("div");
+      time.className = "time";
+      time.textContent = f.startLocal ? f.startLocal.toFormat("ccc d LLL • h:mma") : "—";
 
-      const meta = document.createElement('div');
-      meta.className = 'meta';
+      const meta = document.createElement("div");
+      meta.className = "meta";
 
-      const title = document.createElement('div');
-      title.className = 'title';
-      title.textContent = f.title || 'Fixture';
+      const title = document.createElement("div");
+      title.className = "title";
+      title.textContent = f.title;
 
-      const detail = document.createElement('div');
-      detail.className = 'detail';
-
+      const detail = document.createElement("div");
+      detail.className = "detail";
       const bits = [];
-      if (f.sport)       bits.push(`Sport: ${f.sport}`);
-      if (f.competition) bits.push(`Comp: ${f.competition}`);
-      if (f.ch)          bits.push(`Channel: ${f.ch}`);
-      if (f.desc)        bits.push(f.desc);
-
-      detail.textContent = bits.join(' • ');
+      if (f.sport) bits.push(`Sport: ${f.sport}`);
+      if (f.description) bits.push(f.description);
+      if (f.bigScreen) bits.push("Big screen");
+      if (f.sound) bits.push("Sound on");
+      detail.textContent = bits.join(" • ");
 
       meta.appendChild(title);
       meta.appendChild(detail);
 
+      const logos = document.createElement("div");
+      logos.className = "logos";
+      if (f.team1Logo) {
+        const img1 = document.createElement("img");
+        img1.className = "logo"; img1.src = f.team1Logo; img1.alt = "Home";
+        logos.appendChild(img1);
+      }
+      if (f.team2Logo) {
+        const img2 = document.createElement("img");
+        img2.className = "logo"; img2.src = f.team2Logo; img2.alt = "Away";
+        logos.appendChild(img2);
+      }
+
       card.appendChild(time);
       card.appendChild(meta);
+      card.appendChild(logos);
+
+      // If you want the card clickable to the fixture page (not all players allow):
+      // if (f.link) { card.style.cursor='pointer'; card.onclick = () => window.open(f.link, '_blank'); }
 
       list.appendChild(card);
     }
@@ -198,7 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
       render(filtered); // success
     } catch (err) {
       render([], `Error ${new Date().toLocaleTimeString()}`);
-      document.getElementById('fixtures').innerHTML =
+      document.getElementById("fixtures").innerHTML =
         `<div class="empty" style="white-space:pre-wrap">Error loading fixtures:\n${(err && err.message) ? err.message : err}</div>`;
     }
   }
