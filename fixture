@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ---------- CONFIG ----------
   const FANZO_XML_URL = "https://www-service.fanzo.com/venues/124077/fixture/xml?newFields=1"; // your venue XML
   const PROXY_BASE    = "https://fanzo.harry-brasher.workers.dev/?url=";                       // your CORS proxy
-  const SHOW_MODE     = "today";   // "today" | "range" | "all"
+  const SHOW_MODE     = "all";   // "today" | "range" | "all"
   const RANGE_DAYS    = 7;         // when SHOW_MODE = "range"
   const REFRESH_MS    = 15 * 60 * 1000; // 15 min
   const TZ            = "Australia/Adelaide";
