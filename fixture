@@ -2,57 +2,31 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta http-equiv="refresh" content="3600"> <!-- hard refresh hourly as a safety net -->
+<meta http-equiv="refresh" content="3600">
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Live Sport Fixtures</title>
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
 <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
-<!-- Luxon for timezone formatting (keep defer) -->
 <script defer src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
 <style>
   :root {
-    --bg: #0b0d12;
-    --card: #11141b;
-    --text: #f2f4f8;
-    --muted: #9aa4b2;
-    --accent: #4cc3ff;
+    --bg: #0b0d12; --card: #11141b; --text: #f2f4f8; --muted: #9aa4b2; --accent: #4cc3ff;
   }
-  html,body {
-    height:100%; margin:0; background:var(--bg); color:var(--text);
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
-  }
-  .wrap {
-    max-width: 1080px; margin: 0 auto; padding: 24px;
-  }
-  header {
-    display:flex; align-items:center; justify-content:space-between; gap:16px;
-  }
-  h1 { font-size: 44px; line-height:1.1; margin: 0; letter-spacing: 0.5px; }
-  .sub { color: var(--muted); font-size: 16px; }
-  .grid {
-    margin-top: 18px;
-    display: grid; grid-template-columns: 1fr; gap: 12px;
-  }
-  .card {
-    background: var(--card); border-radius: 16px; padding: 16px 18px;
-    display:flex; gap: 14px; align-items: center; min-height: 84px;
-  }
-  .time {
-    min-width: 120px; text-align: left; font-weight: 700; font-size: 28px;
-  }
-  .meta { flex: 1; }
-  .title { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
-  .detail { font-size: 16px; color: var(--muted); display:flex; gap:14px; flex-wrap: wrap; }
-  .chip {
-    font-size: 14px; padding: 3px 8px; border-radius: 999px; background: #1b2130; color: #b7c2cf;
-  }
-  .empty {
-    text-align:center; padding: 80px 20px; color: var(--muted); font-size: 20px;
-  }
-  footer { margin-top: 16px; color: var(--muted); font-size: 14px; text-align: right; }
-  @media (min-width: 900px) {
-    .grid { grid-template-columns: 1fr; }
-  }
+  html,body { height:100%; margin:0; background:var(--bg); color:var(--text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif; }
+  .wrap { max-width:1080px; margin:0 auto; padding:24px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+  h1 { font-size:44px; line-height:1.1; margin:0; letter-spacing:0.5px; }
+  .sub { color:var(--muted); font-size:16px; }
+  .grid { margin-top:18px; display:grid; grid-template-columns:1fr; gap:12px; }
+  .card { background:var(--card); border-radius:16px; padding:16px 18px; display:flex; gap:14px; align-items:center; min-height:84px; }
+  .time { min-width:120px; text-align:left; font-weight:700; font-size:28px; }
+  .meta { flex:1; }
+  .title { font-size:26px; font-weight:700; margin-bottom:4px; }
+  .detail { font-size:16px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap; }
+  .chip { font-size:14px; padding:3px 8px; border-radius:999px; background:#1b2130; color:#b7c2cf; }
+  .empty { text-align:center; padding:80px 20px; color:var(--muted); font-size:20px; }
+  footer { margin-top:16px; color:var(--muted); font-size:14px; text-align:right; }
 </style>
 </head>
 <body>
@@ -74,17 +48,19 @@
 document.addEventListener('DOMContentLoaded', () => {
   // ---------- CONFIG ----------
   const FANZO_XML_URL = "https://www-service.fanzo.com/venues/124077/fixture/xml?newFields=1"; // your venue XML
-  const PROXY_BASE    = "https://fanzo.harry-brasher.workers.dev/?url=";                       // your CORS proxy
-  const SHOW_MODE     = "all";   // "today" | "range" | "all"
+  const PROXY_BASE    = "https://fanzo.harry-brasher.workers.dev/";                            // <-- root of your proxy ONLY
+  const SHOW_MODE     = "today";   // "today" | "range" | "all"
   const RANGE_DAYS    = 7;         // when SHOW_MODE = "range"
   const REFRESH_MS    = 15 * 60 * 1000; // 15 min
   const TZ            = "Australia/Adelaide";
 
   const { DateTime, Interval } = luxon;
 
-  function proxied(url) {
-    // cache-buster avoids signage caching
-    return PROXY_BASE + encodeURIComponent(url) + "&t=" + Date.now();
+  function buildProxyUrl(targetUrl) {
+    const u = new URL(PROXY_BASE);
+    u.searchParams.set("url", targetUrl);
+    u.searchParams.set("t", Date.now()); // cache buster for signage players
+    return u.toString();
   }
 
   function getText(el, names) {
@@ -119,15 +95,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function fetchXML() {
-    const res = await fetch(proxied(FANZO_XML_URL), { cache: 'no-store' });
-    const txt = await res.text(); // capture body for better error messages
-    if (!res.ok) throw new Error(`Upstream ${res.status}: ${txt.slice(0,200)}`);
+    const url = buildProxyUrl(FANZO_XML_URL);
+    const res = await fetch(url, { cache: 'no-store' });
+    const txt = await res.text(); // capture body for diagnostics
+    if (!res.ok) {
+      throw new Error(`Proxy HTTP ${res.status} from ${url}\n\n${txt.slice(0,300)}`);
+    }
     const parser = new DOMParser();
     return parser.parseFromString(txt, "application/xml");
   }
 
   function mapFixtures(xml) {
-    // Flexible tag names to match FANZO/RSS shapes
     const nodes = Array.from(xml.querySelectorAll('fixture, item, event, Fixture, Event'));
     return nodes.map(node => {
       const title       = getText(node, ['title','eventName','name']);
@@ -137,22 +115,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const ch          = getText(node, ['channel','broadcaster','tvChannel','tv']);
       const image       = getText(node, ['image','imageUrl','logo','img']);
 
-      // Time candidates (add pubDate for RSS)
+      // Include common RSS date field as fallback
       const tLocal = getText(node, ['startTimeLocal','localStart','startLocal']);
-      const tUTC   = getText(node, ['startTimeUtc','utcStart','startTime','StartUtc','pubDate']);
+      const tUTC   = getText(node, ['startTimeUtc','utcStart','startTime','StartUtc','pubDate','date']);
       const start  = asISO(tLocal) || asISO(tUTC);
       const startLocal = start ? start.setZone(TZ) : null;
 
       return { title, sport, competition, desc, ch, image, startLocal };
     })
     .filter(x => x.title && x.startLocal)
-    .sort((a,b) => a.startLocal.toMillis() - b.startLocal.toMillis()); // <-- fixed sort
+    .sort((a,b) => a.startLocal.toMillis() - b.startLocal.toMillis());
   }
 
   function filterFixtures(arr) {
-    if (SHOW_MODE === 'all') return arr;
+    if (SHOW_MODE === 'all')  return arr;
     if (SHOW_MODE === 'range') return arr.filter(x => inNextDays(x.startLocal, RANGE_DAYS));
-    return arr.filter(x => isToday(x.startLocal)); // default: today
+    return arr.filter(x => isToday(x.startLocal));
   }
 
   function render(fixtures, statusText) {
@@ -219,10 +197,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const filtered = filterFixtures(mapped);
       render(filtered); // success
     } catch (err) {
-      // Surface the error visibly on the screen (useful on signage)
       render([], `Error ${new Date().toLocaleTimeString()}`);
       document.getElementById('fixtures').innerHTML =
-        `<div class="empty">Error loading fixtures:<br>${(err && err.message) ? err.message : err}</div>`;
+        `<div class="empty" style="white-space:pre-wrap">Error loading fixtures:\n${(err && err.message) ? err.message : err}</div>`;
     }
   }
 
